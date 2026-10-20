@@ -262,25 +262,58 @@ async function showEditRecipe(recipe) {
     showRecipeDetail(recipe.id);
   });
 }
-
 // ===== Import Screen =====
 function renderImportScreen(container) {
   container.innerHTML = `
     <div class="import-form">
-      <label class="label">הדבק קישור למתכון</label>
-      <input type="url" id="import-url" class="input" placeholder="https://...">
-      <button class="btn btn-primary" id="btn-import">ייבא מתכון</button>
-      
-      <p class="text-muted text-center mt-3" style="font-size:0.85rem">
-        תומך בקישורים מאינסטגרם, אתרי מתכונים ועוד.<br>
-        בשלב זה הפירוק הוא בסיסי – נשפר אותו בהמשך.
-      </p>
+      <div class="filter-row" style="margin-bottom:16px;">
+        <button class="filter-chip active" id="tab-link" data-tab="link">קישור</button>
+        <button class="filter-chip" id="tab-text" data-tab="text">הדבק טקסט</button>
+      </div>
+
+      <div id="panel-link">
+        <label class="label">הדבק קישור למתכון</label>
+        <input type="url" id="import-url" class="input" placeholder="https://...">
+        <button class="btn btn-primary" id="btn-import-link">ייבא מקישור</button>
+        <p class="text-muted text-center mt-2" style="font-size:0.8rem;">
+          הקישור נשמר כמקור. התוכן עדיין צריך להידבק ידנית.
+        </p>
+      </div>
+
+      <div id="panel-text" class="hidden">
+        <label class="label">הדבק את כל טקסט המתכון</label>
+        <textarea id="import-text" class="textarea" style="min-height:180px;" placeholder="הדבק כאן את שם המתכון, המרכיבים ואופן ההכנה..."></textarea>
+        <button class="btn btn-primary" id="btn-import-text">נתח ושמור</button>
+        <p class="text-muted text-center mt-2" style="font-size:0.8rem;">
+          המערכת תנסה לפצל אוטומטית למרכיבים והוראות.
+        </p>
+      </div>
       
       <div id="import-result" class="import-result hidden"></div>
     </div>
   `;
   
-  container.querySelector('#btn-import').addEventListener('click', handleImport);
+  // Tab switching
+  const tabLink = container.querySelector('#tab-link');
+  const tabText = container.querySelector('#tab-text');
+  const panelLink = container.querySelector('#panel-link');
+  const panelText = container.querySelector('#panel-text');
+
+  tabLink.addEventListener('click', () => {
+    tabLink.classList.add('active');
+    tabText.classList.remove('active');
+    panelLink.classList.remove('hidden');
+    panelText.classList.add('hidden');
+  });
+  tabText.addEventListener('click', () => {
+    tabText.classList.add('active');
+    tabLink.classList.remove('active');
+    panelText.classList.remove('hidden');
+    panelLink.classList.add('hidden');
+  });
+
+  container.querySelector('#btn-import-link').addEventListener('click', handleImport);
+  container.querySelector('#btn-import-text').addEventListener('click', handleTextImport);
 }
 
 async function handleImport() {
@@ -293,57 +326,145 @@ async function handleImport() {
   resultDiv.innerHTML = '<p class="text-center">מייבא...</p>';
   
   try {
-    // Basic extraction (placeholder for future AI)
     const title = extractTitleFromUrl(url);
     const suggestedCategoryId = await suggestCategory(title);
-    
-    allCategories = await getAllCategories();
-    
-    resultDiv.innerHTML = `
-      <div class="card">
-        <h3>תוצאת הייבוא</h3>
-        
-        <label class="label">שם המתכון</label>
-        <input type="text" id="result-title" class="input" value="${escapeHtml(title)}">
-        
-        <label class="label">קטגוריה</label>
-        <select id="result-category" class="select">
-          ${allCategories.map(c => `
-            <option value="${c.id}" ${c.id === suggestedCategoryId ? 'selected' : ''}>${c.name}</option>
-          `).join('')}
-        </select>
-        
-        <label class="label">מרכיבים</label>
-        <textarea id="result-ingredients" class="textarea" placeholder="הדבק כאן את רשימת המרכיבים..."></textarea>
-        
-        <label class="label">אופן ההכנה</label>
-        <textarea id="result-instructions" class="textarea" placeholder="הדבק כאן את הוראות ההכנה..."></textarea>
-        
-        <button class="btn btn-primary mt-2" id="btn-save-recipe">שמור מתכון</button>
-      </div>
-    `;
-    
-    document.getElementById('btn-save-recipe').addEventListener('click', async () => {
-      const recipe = {
-        title: document.getElementById('result-title').value.trim(),
-        categoryId: Number(document.getElementById('result-category').value),
-        ingredients: document.getElementById('result-ingredients').value.trim(),
-        instructions: document.getElementById('result-instructions').value.trim(),
-        sourceUrl: url
-      };
-      
-      if (!recipe.title) return alert('יש להזין שם למתכון');
-      
-      await addRecipe(recipe);
-      alert('המתכון נשמר בהצלחה!');
-      urlInput.value = '';
-      resultDiv.classList.add('hidden');
-      showScreen('home');
-    });
-    
+    await showImportResult({ title, ingredients: '', instructions: '', sourceUrl: url, suggestedCategoryId });
   } catch (err) {
     resultDiv.innerHTML = `<p class="text-center" style="color:var(--danger)">שגיאה: ${err.message}</p>`;
   }
+}
+
+async function handleTextImport() {
+  const textArea = document.getElementById('import-text');
+  const raw = textArea.value.trim();
+  if (!raw) return alert('יש להדביק טקסט של מתכון');
+
+  const resultDiv = document.getElementById('import-result');
+  resultDiv.classList.remove('hidden');
+  resultDiv.innerHTML = '<p class="text-center">מנתח...</p>';
+
+  try {
+    const parsed = parseRecipeText(raw);
+    const suggestedCategoryId = await suggestCategory(parsed.title);
+    await showImportResult({
+      title: parsed.title,
+      ingredients: parsed.ingredients,
+      instructions: parsed.instructions,
+      sourceUrl: '',
+      suggestedCategoryId
+    });
+  } catch (err) {
+    resultDiv.innerHTML = `<p class="text-center" style="color:var(--danger)">שגיאה: ${err.message}</p>`;
+  }
+}
+
+async function showImportResult({ title, ingredients, instructions, sourceUrl, suggestedCategoryId }) {
+  const resultDiv = document.getElementById('import-result');
+  allCategories = await getAllCategories();
+
+  resultDiv.innerHTML = `
+    <div class="card">
+      <h3>תוצאת הייבוא</h3>
+      
+      <label class="label">שם המתכון</label>
+      <input type="text" id="result-title" class="input" value="${escapeHtml(title)}">
+      
+      <label class="label">קטגוריה</label>
+      <select id="result-category" class="select">
+        ${allCategories.map(c => `
+          <option value="${c.id}" ${c.id === suggestedCategoryId ? 'selected' : ''}>${c.name}</option>
+        `).join('')}
+      </select>
+      
+      <label class="label">מרכיבים</label>
+      <textarea id="result-ingredients" class="textarea">${escapeHtml(ingredients)}</textarea>
+      
+      <label class="label">אופן ההכנה</label>
+      <textarea id="result-instructions" class="textarea">${escapeHtml(instructions)}</textarea>
+      
+      <button class="btn btn-primary mt-2" id="btn-save-recipe">שמור מתכון</button>
+    </div>
+  `;
+  
+  document.getElementById('btn-save-recipe').addEventListener('click', async () => {
+    const recipe = {
+      title: document.getElementById('result-title').value.trim(),
+      categoryId: Number(document.getElementById('result-category').value),
+      ingredients: document.getElementById('result-ingredients').value.trim(),
+      instructions: document.getElementById('result-instructions').value.trim(),
+      sourceUrl: sourceUrl || ''
+    };
+    
+    if (!recipe.title) return alert('יש להזין שם למתכון');
+    
+    await addRecipe(recipe);
+    alert('המתכון נשמר בהצלחה!');
+    document.getElementById('import-url').value = '';
+    document.getElementById('import-text').value = '';
+    resultDiv.classList.add('hidden');
+    showScreen('home');
+  });
+}
+
+/** Simple heuristic parser for pasted recipe text */
+function parseRecipeText(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) {
+    return { title: 'מתכון חדש', ingredients: '', instructions: '' };
+  }
+
+  // First non-empty line is usually the title
+  let title = lines[0];
+  // Clean common prefixes
+  title = title.replace(/^(מתכון ל|מתכון:|שם המתכון:)\s*/i, '').trim();
+
+  const ingredientKeywords = /מרכיבים|מצרכים|רכיבים|ingredients|what you'll need/i;
+  const instructionKeywords = /אופן ההכנה|הכנה|הוראות|שיטה|instructions|directions|method|steps/i;
+
+  let ingredientsStart = -1;
+  let instructionsStart = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    if (ingredientsStart === -1 && ingredientKeywords.test(lines[i])) {
+      ingredientsStart = i;
+    }
+    if (instructionsStart === -1 && instructionKeywords.test(lines[i])) {
+      instructionsStart = i;
+    }
+  }
+
+  let ingredients = '';
+  let instructions = '';
+
+  if (ingredientsStart !== -1 && instructionsStart !== -1) {
+    // Both sections found
+    const startIng = ingredientsStart + 1;
+    const endIng = instructionsStart;
+    ingredients = lines.slice(startIng, endIng).join('\n');
+    instructions = lines.slice(instructionsStart + 1).join('\n');
+  } else if (ingredientsStart !== -1) {
+    ingredients = lines.slice(ingredientsStart + 1).join('\n');
+  } else if (instructionsStart !== -1) {
+    // Assume everything before instructions is ingredients (except title)
+    ingredients = lines.slice(1, instructionsStart).join('\n');
+    instructions = lines.slice(instructionsStart + 1).join('\n');
+  } else {
+    // No clear headers – try to split by looking for numbered steps
+    const numbered = lines.findIndex((l, idx) => idx > 0 && /^\d+[\.\)]\s/.test(l));
+    if (numbered > 1) {
+      ingredients = lines.slice(1, numbered).join('\n');
+      instructions = lines.slice(numbered).join('\n');
+    } else {
+      // Fallback: everything after title goes to ingredients
+      ingredients = lines.slice(1).join('\n');
+    }
+  }
+
+  return {
+    title: title || 'מתכון חדש',
+    ingredients: ingredients.trim(),
+    instructions: instructions.trim()
+  };
 }
 
 function extractTitleFromUrl(url) {
