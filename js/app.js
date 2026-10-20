@@ -424,3 +424,81 @@ async function renderCategoriesScreen(container) {
       input.value = '';
       renderCategoriesScreen(container);
     } catch (err) {
+      alert('שגיאה: ייתכן שהשם כבר קיים');
+    }
+  });
+  
+  container.querySelectorAll('.btn-edit-cat').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const item = e.target.closest('.category-item');
+      const id = Number(item.dataset.id);
+      const currentName = item.querySelector('span').textContent;
+      const newName = prompt('שם חדש לקטגוריה:', currentName);
+      if (newName && newName.trim()) {
+        await updateCategory(id, newName.trim());
+        renderCategoriesScreen(container);
+      }
+    });
+  });
+  
+  container.querySelectorAll('.btn-delete-cat').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const item = e.target.closest('.category-item');
+      const id = Number(item.dataset.id);
+      if (confirm('למחוק את הקטגוריה? מתכונים קיימים לא יימחקו.')) {
+        await deleteCategory(id);
+        renderCategoriesScreen(container);
+      }
+    });
+  });
+}
+
+// ===== Settings Screen =====
+async function renderSettingsScreen(container) {
+  autoSuggestCategory = await getSetting('autoSuggestCategory', true);
+  
+  container.innerHTML = `
+    <div class="settings-item">
+      <div>
+        <strong>הצע קטגוריה אוטומטית</strong>
+        <p class="text-muted" style="font-size:0.85rem; margin-top:4px;">
+          בעת ייבוא מתכון תוצע קטגוריה לפי שם המתכון
+        </p>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="toggle-auto-suggest" ${autoSuggestCategory ? 'checked' : ''}>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    
+    <div class="card mt-3">
+      <p class="text-muted" style="font-size:0.9rem; line-height:1.6;">
+        <strong>גרסה 1.0 – שלד ראשוני</strong><br>
+        ייבוא דרך קישור + ארגון לפי קטגוריות.<br>
+        בהמשך יתווספו: פירוק AI חכם, רשימת קניות, עוזר בישול ועוד.
+      </p>
+    </div>
+    
+    <button class="btn btn-secondary mt-3" id="btn-back-settings" style="width:100%">חזרה</button>
+  `;
+  
+  container.querySelector('#toggle-auto-suggest').addEventListener('change', async (e) => {
+    autoSuggestCategory = e.target.checked;
+    await setSetting('autoSuggestCategory', autoSuggestCategory);
+  });
+  
+  container.querySelector('#btn-back-settings').addEventListener('click', () => showScreen('home'));
+}
+
+// ===== Helpers =====
+function escapeHtml(text) {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function formatMultiline(text) {
+  if (!text) return '<p class="text-muted">לא הוזן</p>';
+  return text.split('\n').filter(Boolean).map(line => `<p>${escapeHtml(line)}</p>`).join('');
+}
